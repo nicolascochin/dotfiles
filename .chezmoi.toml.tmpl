@@ -1,0 +1,5 @@
+{{- $git_email := promptStringOnce . "git_email" "What is your git email address" -}}
+
+[data.git]
+  email = {{ $git_email | quote }}
+  name = "Nicolas COCHIN"

@@ -1,0 +1,16 @@
+[user]
+  name = {{ .git.name }} 
+  email = {{ .git.email }}
+[color]
+  ui = true
+[pull]
+  rebase = true
+[push]
+  autoSetupRemote = true
+[help]
+  autocorrect = 1
+[core]
+  editor = nvim
+  excludesfile = ~/.config/git/global-ignore
+[rerere]
+  enabled = true
