@@ -8,3 +8,4 @@ install:
       - git
       - bat
       - fd-find
+      - ripgrep
