@@ -7,9 +7,9 @@
 {{- end -}}
 
 
-
 [data]
   osid = {{ $osid | quote }}
+  is_distrobox = {{ if ne (env "DISTROBOX_ENTER_PATH") "" }} true {{ else }} false {{end}}
 
 [data.git]
   email = {{ $git_email | quote }}
