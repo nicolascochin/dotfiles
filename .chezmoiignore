@@ -1,6 +1,6 @@
 README.md 
 
-{{- if is_distrobox }}
+{{- if .is_distrobox }}
 .config/foo 
 .config/goo/config
 {{- end }}
