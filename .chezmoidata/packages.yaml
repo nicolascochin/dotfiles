@@ -7,4 +7,4 @@ install:
       - gh
       - git
       - bat
-
+      - fd-find
