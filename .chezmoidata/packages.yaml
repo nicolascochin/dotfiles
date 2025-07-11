@@ -1,0 +1,10 @@
+install:
+  linux-debian:
+    install_cmd: sudo apt install -y -qq
+    test_cmd: dpkg -s
+    packages:
+      - zsh
+      - gh
+      - git
+      - bat
+

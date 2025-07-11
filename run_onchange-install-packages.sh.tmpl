@@ -1,0 +1,58 @@
+#!/bin/bash
+
+
+PACKAGES_TO_INSTALL=()
+INSTALL_CMD="{{ index (index .install .osid) "install_cmd" }}"
+TEST_CMD="{{ index (index .install .osid) "test_cmd" }}"
+
+{{ $key := index (index .install .osid) "packages" }}
+{{ range $key }}
+  PACKAGE={{ . }}
+  ! $TEST_CMD $PACKAGE > /dev/null 2>&1  && PACKAGES_TO_INSTALL+=($PACKAGE)
+{{ end }}
+
+if [[ ${PACKAGES_TO_INSTALL[@]} != 0 ]]; then 
+  echo "Install packages: ${PACKAGES_TO_INSTALL[@]}"
+  $INSTALL_CMD "${PACKAGES_TO_INSTALL[@]}"
+fi
+
+exit
+
+
+is_distrobox() {
+  [ -n "$DISTROBOX_ENTER_PATH" ]
+}
+
+
+{{ if eq .chezmoi.os "linux" -}}
+  {{   if eq .chezmoi.osRelease.id "debian" }}
+    INSTALL_CMD="sudo apt install -y"
+    PACKAGES_TO_INSTALL+=(bat)
+
+    if is_distrobox; then 
+      PACKAGES_TO_INSTALL+=(figlet)
+    fi
+
+    for pkg in "${PACKAGES_TO_INSTALL[@]}"; do
+      if ! rpm -q "$pkg" &>/dev/null; then
+        MISSING_PACKAGES+=("$pkg")
+      fi
+   done
+
+
+  {{   else if eq .chezmoi.osRelease.id "fedora" }}
+  # Fedora-specific code
+  {{   end }}
+
+{{ else if eq .chezmoi.os "darwin" -}}
+#!/bin/sh
+echo mac
+{{ end -}}
+
+
+## Install missing packages
+if [ ${#MISSING_PACKAGES[@]} -ne 0 ]; then
+  echo  "$INSTALL_CMD ${MISSING_PACKAGES[@]}" 
+else
+  echo "All packages are already installed."
+fi
