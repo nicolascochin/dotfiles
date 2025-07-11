@@ -1,25 +1,17 @@
-["~/.oh-my-zsh"]
-  type = "archive"
-  url = "https://github.com/ohmyzsh/ohmyzsh/archive/master.tar.gz"
-  exact = true
-  stripComponents = 1
+[".oh-my-zsh"]
+  type = "git-repo"
+  url = "https://github.com/ohmyzsh/ohmyzsh.git"
   refreshPeriod = "168h"
-["~/.oh-my-zsh/custom/plugins/forgit"]
-  type = "archive"
-  url = "https://github.com/wfxr/forgit/archive/master.tar.gz"
-  exact = true
-  stripComponents = 1
+[".oh-my-zsh/custom/plugins/forgit"]
+  type = "git-repo"
+  url = "https://github.com/wfxr/forgit.git"
   refreshPeriod = "168h"
-["~/.oh-my-zsh/custom/plugins/F-Sh-H"]
-  type = "archive"
-  url = "https://github.com/z-shell/F-Sy-H/archive/master.tar.gz"
-  exact = true
-  stripComponents = 1
+[".oh-my-zsh/custom/plugins/F-Sh-H"]
+  type = "git-repo"
+  url = "https://github.com/z-shell/F-Sy-H.git"
   refreshPeriod = "168h"
-["~/.oh-my-zsh/custom/plugins/zsh-autosuggestions"]
-  type = "archive"
-  url = "https://github.com/zsh-users/zsh-autosuggestions/archive/master.tar.gz"
-  exact = true
-  stripComponents = 1
+[".oh-my-zsh/custom/plugins/zsh-autosuggestions"]
+  type = "git-repo"
+  url = "https://github.com/zsh-users/zsh-autosuggestions.git"
   refreshPeriod = "168h"
 
