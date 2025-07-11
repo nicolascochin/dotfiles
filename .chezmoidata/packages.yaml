@@ -1,6 +1,6 @@
 install:
   linux-debian:
-    install_cmd: sudo apt update && sudo apt install -y -qq
+    install_cmd: sudo apt update \&\& sudo apt install -y -qq
     test_cmd: dpkg -s
     packages:
       - zsh

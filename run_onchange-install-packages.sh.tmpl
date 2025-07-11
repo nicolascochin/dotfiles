@@ -16,6 +16,7 @@
     ! $TEST_CMD $PACKAGE > /dev/null 2>&1  && PACKAGES_TO_INSTALL+=($PACKAGE)
   {{ end }}
 
+
   if [[ ${#PACKAGES_TO_INSTALL[@]} != 0 ]]; then 
     echo "Install packages: ${PACKAGES_TO_INSTALL[@]}"
     $INSTALL_CMD "${PACKAGES_TO_INSTALL[@]}"
