@@ -8,5 +8,5 @@ then
   }
 #  unalias help
 
-  export BAT_THEME=Dracula
+  export BAT_THEME="Catppuccin Mocha"
 fi
