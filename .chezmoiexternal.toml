@@ -1,0 +1,25 @@
+["~/.oh-my-zsh"]
+  type = "archive"
+  url = "https://github.com/ohmyzsh/ohmyzsh/archive/master.tar.gz"
+  exact = true
+  stripComponents = 1
+  refreshPeriod = "168h"
+["~/.oh-my-zsh/custom/plugins/forgit"]
+  type = "archive"
+  url = "https://github.com/wfxr/forgit/archive/master.tar.gz"
+  exact = true
+  stripComponents = 1
+  refreshPeriod = "168h"
+["~/.oh-my-zsh/custom/plugins/F-Sh-H"]
+  type = "archive"
+  url = "https://github.com/z-shell/F-Sy-H/archive/master.tar.gz"
+  exact = true
+  stripComponents = 1
+  refreshPeriod = "168h"
+["~/.oh-my-zsh/custom/plugins/zsh-autosuggestions"]
+  type = "archive"
+  url = "https://github.com/zsh-users/zsh-autosuggestions/archive/master.tar.gz"
+  exact = true
+  stripComponents = 1
+  refreshPeriod = "168h"
+
