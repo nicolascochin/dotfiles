@@ -1,0 +1,7 @@
+#!/bin/bash
+
+if command -v /usr/bin/bat 2>&1 > /dev/null; then
+  /usr/bin/bat $@
+else
+  /usr/bin/batcat $@
+fi

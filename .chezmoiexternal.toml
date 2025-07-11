@@ -6,12 +6,15 @@
   type = "git-repo"
   url = "https://github.com/wfxr/forgit.git"
   refreshPeriod = "168h"
-[".oh-my-zsh/custom/plugins/F-Sh-H"]
+[".oh-my-zsh/custom/plugins/F-Sy-H"]
   type = "git-repo"
   url = "https://github.com/z-shell/F-Sy-H.git"
+  refreshPeriod = "168h"
+[".oh-my-zsh/custom/plugins/zshrc.d"]
+  type = "git-repo"
+  url = "https://github.com/mattmc3/zshrc.d.git"
   refreshPeriod = "168h"
 [".oh-my-zsh/custom/plugins/zsh-autosuggestions"]
   type = "git-repo"
   url = "https://github.com/zsh-users/zsh-autosuggestions.git"
   refreshPeriod = "168h"
-
