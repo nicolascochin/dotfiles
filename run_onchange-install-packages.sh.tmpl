@@ -19,6 +19,6 @@
 
   if [[ ${#PACKAGES_TO_INSTALL[@]} != 0 ]]; then 
     echo "Install packages: ${PACKAGES_TO_INSTALL[@]}"
-    $INSTALL_CMD "${PACKAGES_TO_INSTALL[@]}"
+    eval "$INSTALL_CMD ${PACKAGES_TO_INSTALL[@]}"
   fi
 {{ end }}
