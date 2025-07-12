@@ -6,10 +6,20 @@
 {{-   $osid = printf "%s-%s" .chezmoi.os .chezmoi.osRelease.id -}}
 {{- end -}}
 
+## is_container detection
+{{- $env := env "container" -}}
+
+{{- $isContainer := or
+  (stat "/.dockerenv")
+  (contains $env "docker")
+  (contains $env "podman")
+  (contains $env "lxc")
+-}}
+## end
 
 [data]
   osid = {{ $osid | quote }}
-  is_distrobox = {{ if ne (env "DISTROBOX_ENTER_PATH") "" }} true {{ else }} false {{end}}
+  isContainer = {{ if $isContainer }}true{{ else }}false{{ end }}
 
 [data.git]
   email = {{ $git_email | quote }}
