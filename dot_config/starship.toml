@@ -2,7 +2,7 @@
 
 format = """
 [](red)\
-${custom.distrobox}\
+$container\
 $os\
 $username\
 $hostname\
@@ -69,6 +69,10 @@ format = '[ $user]($style)'
 ssh_only = false
 format = '[$ssh_symbol](bg:red bold blue)[ on ](bg:red fg:crust)[$hostname](bg:red bold fg:crust)'
 disabled = false
+
+[container]
+format = '[$symbol ]($style)'
+style = "bg:red bold fg:crust"
 
 [directory]
 style = "bg:peach fg:crust"
