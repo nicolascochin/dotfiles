@@ -6,7 +6,7 @@
 {{-   $osid = printf "%s-%s" .chezmoi.os .chezmoi.osRelease.id -}}
 {{- end -}}
 
-## is_container detection
+## isContainer detection
 {{- $env := env "container" -}}
 
 {{- $isContainer := or
