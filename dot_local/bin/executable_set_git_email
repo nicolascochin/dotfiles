@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# Prompt the user for their Git email
+read -rp "Enter your Git email address: " user_email
+
+# Target config file
+CONFIG_FILE="$HOME/.config/chezmoi/chezmoi.toml"
+
+# Check if the config file exists
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  echo "Error: $CONFIG_FILE does not exist."
+  exit 1
+fi
+
+# Replace the 'email' value in the [data.git] section
+# This finds the line with 'email = ' within the [data.git] block and updates it
+sed -i -E "/^\[data.git\]/,/^\[.*\]/ s/^([[:space:]]*email[[:space:]]*=[[:space:]]*)\".*\"/\1\"$user_email\"/" "$CONFIG_FILE"
+
+# Check if the update was successful
+if grep -q "email = \"$user_email\"" "$CONFIG_FILE"; then
+  echo "Git email successfully updated in $CONFIG_FILE."
+else
+  echo "Error: Failed to update Git email."
+  exit 1
+fi
+
+# Apply the changes using chezmoi
+echo "Applying changes with chezmoi..."
+chezmoi apply
+
+

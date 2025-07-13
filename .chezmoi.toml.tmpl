@@ -1,5 +1,7 @@
-{{- $git_email := promptStringOnce . "git_email" "What is your git email address" -}}
-
+{{- $git_email := env "GIT_EMAIL" -}}
+{{- if eq $git_email "" -}}
+  {{- $git_email = promptStringOnce . "git_email" "What is your git email address" -}}
+{{- end -}}
 
 {{- $osid := .chezmoi.os -}}
 {{- if hasKey .chezmoi.osRelease "id" -}}
