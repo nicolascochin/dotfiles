@@ -9,3 +9,5 @@ install:
       - bat
       - fd-find
       - ripgrep
+      - command-not-found
+      
