@@ -11,4 +11,5 @@ install:
       - ripgrep
       - command-not-found
       - direnv
+      - jq
       
