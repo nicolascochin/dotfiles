@@ -9,7 +9,8 @@ README.md
 .local/bin/bat
 {{ end }}
 
-{{ if ne .chezmoi.osRelease.id "debian" }}
+
+{{ if not (and (hasKey .chezmoi.osRelease "id") (eq .chezmoi.osRelease.id "debian")) }}
 .local/bin/bat
 {{ end }}
 
