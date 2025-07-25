@@ -1,5 +1,13 @@
 README.md 
 
+{{ if eq .chezmoi.os "darwin" }}
+
+{{ else if eq .chezmoi.os "linux" }}
+.wezterm.lua
+
+{{ end }}
+
+
 {{- if .isContainer }}
 .config/foo 
 .config/goo/config
