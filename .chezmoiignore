@@ -1,12 +1,17 @@
 README.md 
 
 {{ if eq .chezmoi.os "darwin" }}
+.local/bin/bat
 
 {{ else if eq .chezmoi.os "linux" }}
 .wezterm.lua
 .zshrc.d/command-not-found.zsh
+.local/bin/bat
 {{ end }}
 
+{{ if ne .chezmoi.osRelease.id "debian" }}
+.local/bin/bat
+{{ end }}
 
 {{- if .isContainer }}
 .config/foo 
