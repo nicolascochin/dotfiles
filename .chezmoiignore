@@ -4,7 +4,7 @@ README.md
 
 {{ else if eq .chezmoi.os "linux" }}
 .wezterm.lua
-
+.zshrc.d/command-not-found.zsh
 {{ end }}
 
 

@@ -1,4 +1,17 @@
 install:
+  darwin:
+    install_cmd: brew install
+    test_cmd: brew list
+    packages:
+      - zsh
+      - gh
+      - git
+      - bat
+      - fd
+      - ripgrep
+      - direnv
+      - jq
+  
   linux-debian:
     install_cmd: sudo apt update && sudo apt install -y -qq
     test_cmd: dpkg -s
