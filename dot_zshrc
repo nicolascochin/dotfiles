@@ -90,11 +90,6 @@ cmd_exists bundle && OMZ_PLUGINS+=(bundler)
 cmd_exists ruby && OMZ_PLUGINS+=(ruby)
 cmd_exists rails && OMZ_PLUGINS+=(rails)
 cmd_exists starship && OMZ_PLUGINS+=(starship)
-[[ $(chezmoi data --format json | jq '.isContainer') == 'false' ]] && (
-  omz_PLUGINS+=(ssh-agent)
-  zstyle :omz:plugins:ssh-agent agent-forwarding yes
-  zstyle :omz:plugins:ssh-agent lazy yes
-)
 
 OMZ_PLUGINS+=(
   aliases
