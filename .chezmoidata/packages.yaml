@@ -11,7 +11,8 @@ install:
       - ripgrep
       - direnv
       - jq
-  
+      - pygments # for syntax highlighting in bat
+
   linux-debian:
     install_cmd: sudo apt update && sudo apt install -y -qq
     test_cmd: dpkg -s
@@ -25,4 +26,5 @@ install:
       - command-not-found
       - direnv
       - jq
-      
+      - python3-pygments # for syntax highlighting in bat
+      - locales-all # for setting UTF-8 locale (required by starship)
