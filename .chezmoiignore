@@ -1,4 +1,4 @@
-README.md 
+README.md
 
 {{ if eq .chezmoi.os "darwin" }}
 .local/bin/bat
@@ -13,8 +13,7 @@ README.md
 .local/bin/bat
 {{ end }}
 
-{{- if .isContainer }}
-.config/foo 
+{{- if and (hasKey . "isContainer") .isContainer }}
+.config/foo
 .config/goo/config
 {{- end }}
-
