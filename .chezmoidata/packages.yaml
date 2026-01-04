@@ -28,3 +28,4 @@ install:
       - jq
       - python3-pygments # for syntax highlighting in bat
       - locales-all # for setting UTF-8 locale (required by starship)
+      - less # required by bat
