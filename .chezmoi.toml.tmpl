@@ -9,7 +9,7 @@
 {{- end -}}
 
 ## isContainer detection
-{{- $isContainer := false -}}
+{{ $isContainer := false }}
 
 {{- if eq .chezmoi.os "linux" -}}
   {{- $env := env "container" -}}

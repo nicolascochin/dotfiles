@@ -13,7 +13,7 @@ README.md
 .local/bin/bat
 {{ end }}
 
-{{- if and (hasKey . "isContainer") .isContainer }}
+{{- if .isContainer }}
 .config/foo
 .config/goo/config
 {{- end }}
