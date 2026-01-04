@@ -9,4 +9,7 @@ then
 #  unalias help
 
   export BAT_THEME="Catppuccin Mocha"
+
+  # Rebuild cache to found themes
+  bat cache --build
 fi
