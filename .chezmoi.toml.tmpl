@@ -9,15 +9,17 @@
 {{- end -}}
 
 ## isContainer detection
-{{- $env := env "container" -}}
+{{- $isContainer := false -}}
 
-{{- $isContainer := or
-  (stat "/.dockerenv")
-  (contains $env "docker")
-  (contains $env "podman")
-  (contains $env "lxc")
--}}
-## end
+{{- if eq .chezmoi.os "linux" -}}
+  {{- $env := env "container" -}}
+  {{- $isContainer = or
+    (stat "/.dockerenv")
+    (contains $env "docker")
+    (contains $env "podman")
+    (contains $env "lxc")
+  -}}
+{{- end -}}
 
 [data]
   osid = {{ $osid | quote }}
