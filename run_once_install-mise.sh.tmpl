@@ -1,0 +1,5 @@
+#!/bin/sh
+
+{{- if .isContainer }}
+curl https://mise.run | sh
+{{ end }}
