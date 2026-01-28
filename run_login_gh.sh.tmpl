@@ -1,0 +1,6 @@
+#!/bin/sh
+
+if ! gh auth status > /dev/null
+  echo "Login to Github CLI"
+  gh auth login
+fi
