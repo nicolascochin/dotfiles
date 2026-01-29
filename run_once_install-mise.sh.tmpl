@@ -1,8 +1,5 @@
 #!/bin/sh
 
 {{- if .isContainer }}
-# change ownership of ~/.cache to non-root user (somethimes created as root by some devcontainer features)
-sudo chown -R "$(id -u):$(id -g)" ${HOME}/.cache
-{{- else }}
 curl https://mise.run | sh
 {{ end }}
