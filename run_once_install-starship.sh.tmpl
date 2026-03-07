@@ -1,3 +1,5 @@
 #!/bin/sh
 
+type starship >/dev/null 2>&1 && "Starship is already installed. Skipping..." exit
+
 curl -sS https://starship.rs/install.sh | sh -s -- -y -b .local/bin
