@@ -1,0 +1,35 @@
+[r2]
+type = s3
+acl = private
+provider = Cloudflare
+access_key_id = {{- protonPass "pass://8XvQjIoqdBsAxJMTK8X1B5JMr3T_xxezljZuIw3c1CIN_9WF4T5pqUJ3WweUI_qSpx4VY6OSUA23nmKjkTqd9w==/nwh7tozDmypYbHTqoTVZza3MHSrlfSoe-C-xIWqQ-ay3B6rvPLpCbWTgAuGDoeW7Du-I55usa1DHwinnvAl7Bg==/AccessKey Id" -}}
+secret_access_key = {{- protonPass "pass://8XvQjIoqdBsAxJMTK8X1B5JMr3T_xxezljZuIw3c1CIN_9WF4T5pqUJ3WweUI_qSpx4VY6OSUA23nmKjkTqd9w==/nwh7tozDmypYbHTqoTVZza3MHSrlfSoe-C-xIWqQ-ay3B6rvPLpCbWTgAuGDoeW7Du-I55usa1DHwinnvAl7Bg==/Secret AccessKey Id" -}}
+endpoint = {{- protonPass "pass://8XvQjIoqdBsAxJMTK8X1B5JMr3T_xxezljZuIw3c1CIN_9WF4T5pqUJ3WweUI_qSpx4VY6OSUA23nmKjkTqd9w==/nwh7tozDmypYbHTqoTVZza3MHSrlfSoe-C-xIWqQ-ay3B6rvPLpCbWTgAuGDoeW7Du-I55usa1DHwinnvAl7Bg==/Endpoint" -}}
+
+[r2data2]
+type = sftp
+host = r2data2
+user = Nico
+key_file = ~/.ssh/id_ed25519
+shell_type = unix
+md5sum_command = md5sum
+sha1sum_command = sha1sum
+
+[pcloud]
+type = pcloud
+hostname = eapi.pcloud.com
+token = {"access_token":"{{- protonPass "pass://CJGCRirQCGqDRPfziQo2guYWwYp8ZrCqsVkqA7AHzyndYRViY7BDAX0VDu7Y1i8UmmMJ4oXRDXAYH1Zso0q0sw==/bXZMC3nCFBr44IjTHuJdwTYrZZl1jf6n1ZqvQNLJghcqDcHkevwFjlT7tF8Zxnor-7l7PPOombT03x1g0hw86Q==/AccessToken" | trim -}}","token_type":"bearer","expiry":"0001-01-01T00:00:00Z"}
+
+[cloud]
+type = sftp
+host = cloud
+user = nico
+key_file = ~/.ssh/id_ed25519
+shell_type = unix
+md5sum_command = md5sum
+sha1sum_command = sha1sum
+
+[icloud]
+type = iclouddrive
+apple_id = {{- protonPass "pass://CJGCRirQCGqDRPfziQo2guYWwYp8ZrCqsVkqA7AHzyndYRViY7BDAX0VDu7Y1i8UmmMJ4oXRDXAYH1Zso0q0sw==/ZPneM9ecz1yyNiriCN0YEkrZICeWlfBLAq5U2Aut6JExxioOvrH9Ora2KZKAmQ3EH4-WVM4N27of5wCnI5u2Fg==/Email" -}}
+password = {{- protonPass "pass://CJGCRirQCGqDRPfziQo2guYWwYp8ZrCqsVkqA7AHzyndYRViY7BDAX0VDu7Y1i8UmmMJ4oXRDXAYH1Zso0q0sw==/ZPneM9ecz1yyNiriCN0YEkrZICeWlfBLAq5U2Aut6JExxioOvrH9Ora2KZKAmQ3EH4-WVM4N27of5wCnI5u2Fg==/Password" -}}

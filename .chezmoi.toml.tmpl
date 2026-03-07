@@ -28,3 +28,10 @@
 [data.git]
   email = {{ $git_email | quote }}
   name = "Nicolas COCHIN"
+
+[protonPass]
+  command = "pass-cli"
+
+[hooks.read-source-state.pre]
+  command = ".local/share/chezmoi/.install-password-manager.sh"
+
