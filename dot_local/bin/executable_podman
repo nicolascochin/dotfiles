@@ -1,0 +1,18 @@
+#!/bin/sh
+# ~/.local/bin/podman
+# Wrapper qui redirige vers le podman de l'hôte, quel que soit
+# le contexte d'exécution (Flatpak, Distrobox, ou natif).
+
+if [ -f /.flatpak-info ]; then
+    # On est dans un sandbox Flatpak
+    exec flatpak-spawn --host podman "$@"
+
+elif [ -n "$CONTAINER_ID" ] || [ -f /run/.containerenv ]; then
+    # On est dans une Distrobox (ou un container OCI générique)
+    exec distrobox-host-exec podman "$@"
+
+else
+    # Exécution native sur l'hôte
+    exec /usr/bin/podman "$@"
+fi
+
