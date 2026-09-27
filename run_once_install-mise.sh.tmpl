@@ -1,7 +1,7 @@
 #!/bin/sh
 
 {{- if .isContainer }}
-type mise >/dev/null 2>&1 && "Mise is already installed. Skipping..." exit
+type mise >/dev/null 2>&1 && { echo "Mise is already installed. Skipping..."; exit 0; }
 
 curl https://mise.run | sh
 {{ end }}
