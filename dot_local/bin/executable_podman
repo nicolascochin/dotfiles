@@ -1,18 +1,28 @@
 #!/bin/sh
-# ~/.local/bin/podman
-# Wrapper qui redirige vers le podman de l'hôte, quel que soit
-# le contexte d'exécution (Flatpak, Distrobox, ou natif).
+# ~/.local/bin/podman (et ~/.local/bin/getenforce, lien vers ce script)
+# Wrapper qui redirige vers la commande de l'hôte appelée sous ce nom (podman, getenforce),
+# quel que soit le contexte d'exécution (Flatpak, Distrobox, ou natif).
+#
+# getenforce : le CLI Dev Containers l'appelle pour savoir s'il doit passer
+# --security-opt label=disable à Podman. Dans un Flatpak ou une Distrobox, le getenforce
+# local répond « Disabled » : sans ce lien, le build des features échoue sous SELinux.
+# https://github.com/devcontainers/cli/issues/1071
+
+cmd=$(basename "$0")
 
 if [ -f /.flatpak-info ]; then
     # On est dans un sandbox Flatpak
-    exec flatpak-spawn --host podman "$@"
+    exec flatpak-spawn --host "$cmd" "$@"
 
 elif [ -n "$CONTAINER_ID" ] || [ -f /run/.containerenv ]; then
     # On est dans une Distrobox (ou un container OCI générique)
-    exec distrobox-host-exec podman "$@"
+    exec distrobox-host-exec "$cmd" "$@"
 
 else
-    # Exécution native sur l'hôte
-    exec /usr/bin/podman "$@"
+    # Exécution native sur l'hôte : le vrai binaire, pas ce wrapper
+    case "$cmd" in
+        getenforce) exec /usr/sbin/getenforce "$@" ;;
+        *) exec /usr/bin/podman "$@" ;;
+    esac
 fi
 
