@@ -1,0 +1,8 @@
+#!/bin/sh
+
+type uv >/dev/null 2>&1 && { echo "uv is already installed. Skipping..."; exit 0; }
+
+echo "Installing uv"
+# Installs uv and uvx in ~/.local/bin (already in PATH via .zshrc).
+# UV_NO_MODIFY_PATH: do not let the installer edit .zshrc, managed by chezmoi.
+curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh
