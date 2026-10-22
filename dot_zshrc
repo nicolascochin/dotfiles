@@ -91,6 +91,7 @@ cmd_exists ruby && OMZ_PLUGINS+=(ruby)
 cmd_exists rails && OMZ_PLUGINS+=(rails)
 cmd_exists starship && OMZ_PLUGINS+=(starship)
 cmd_exists mise && OMZ_PLUGINS+=(mise)
+cmd_exists uv && OMZ_PLUGINS+=(uv)
 
 OMZ_PLUGINS+=(
   aliases
