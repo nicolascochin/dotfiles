@@ -1,0 +1,757 @@
+#!/usr/bin/env bash
+#
+# sync-workspace — synchronise ton workspace entre ce Fedora et le Mac, dans les
+# deux sens.
+#
+# À lancer sur le Fedora, avant d'aller travailler sur le Mac (il récupère le
+# travail du Fedora) et quand tu en reviens (ton travail du Mac revient ici).
+# C'est la même commande dans les deux cas : Unison compare chaque côté à l'état
+# de la dernière synchro et propage ce qui a changé, d'où que ça vienne —
+# créations, modifications, suppressions, commits et branches git compris.
+#
+# Un fichier modifié des deux côtés depuis la dernière synchro est un conflit :
+# il n'est touché nulle part, et le script le signale. Tu tranches ensuite avec
+# -i (au cas par cas) ou --prefer. Toute version remplacée ou supprimée est
+# gardée dans ~/.unison/backup, sur la machine où elle a été remplacée.
+#
+# Les dépendances et caches liés à la plateforme (node_modules, vendor/bundle,
+# .venv…) ne sont pas synchronisés : chaque machine garde les siens.
+#
+# Usage : sync-workspace [-n] [-i] [--prefer fedora|mac]
+#
+# Installation (une fois) :
+#   Mac    : brew install unison ; Réglages Système > Général > Partage >
+#            Session à distance (si le workspace du Mac est dans Documents ou
+#            Bureau, y cocher aussi l'accès complet au disque) ;
+#            conseillé : workspace sensible à la casse (voir plus bas)
+#   Fedora : rpm-ostree install unison (Silverblue, puis redémarrer)
+#            ou sudo dnf install unison (Workstation) ;
+#            clé SSH + alias « mac » dans ~/.ssh/config ;
+#            install -m 755 sync-workspace.sh ~/.local/bin/sync-workspace
+#
+# Workspace du Mac sensible à la casse (conseillé, une fois, sur le Mac) :
+#   Par défaut, le disque d'un Mac confond « a » et « A » : deux fichiers dont
+#   le nom ne diffère que par la casse (Readme.md / README.md, 2f / 2F) ne
+#   peuvent pas y coexister, et Unison les laisse de côté. Un volume APFS
+#   sensible à la casse, réservé au code, règle ça sans toucher au reste de
+#   macOS. Ne pas le faire pour tout le disque : certaines applis (Adobe, par
+#   exemple) ne supportent pas un disque système sensible à la casse.
+#
+#   1. Créer le volume. Il partage l'espace libre du disque (pas de taille à
+#      choisir) et se monte sur /Volumes/Workspace à chaque démarrage :
+#        diskutil apfs addVolume "$(diskutil info / | awk '/APFS Container:/ {print $3}')" "Case-sensitive APFS" Workspace
+#      ou : Utilitaire de disque > Macintosh HD > « + » > nom Workspace,
+#      format « APFS (sensible à la casse) ».
+#   2. Mettre le workspace dessus et laisser un lien à sa place, éditeurs
+#      fermés. Si ~/Workspace contient déjà du travail :
+#        ditto ~/Workspace /Volumes/Workspace
+#        mv ~/Workspace ~/Workspace.old
+#      S'il est vide : rmdir ~/Workspace. Puis, dans tous les cas :
+#        ln -s /Volumes/Workspace ~/Workspace
+#      Vérifier, avant toute synchro (sinon le script recrée un dossier
+#      ~/Workspace ordinaire et le remplit) :
+#        ls -ld ~/Workspace          → ~/Workspace -> /Volumes/Workspace
+#   3. Facultatif : ne pas indexer ce volume dans Spotlight (node_modules…) :
+#        sudo mdutil -i off /Volumes/Workspace
+#   4. Sur le Fedora : sync-workspace -n. Le dossier du Mac a changé de
+#      chemin, donc c'est une première synchro : ce qui n'existe que d'un côté
+#      est copié de l'autre, ce qui diffère est un conflit. Vérifier l'aperçu,
+#      puis sync-workspace. Une fois tout bon, supprimer ~/Workspace.old.
+#
+#   Le script détecte tout seul que le volume est sensible à la casse (il y
+#   crée un fichier de test à chaque lancement) et le dit à Unison, qui sinon
+#   suppose tout Mac insensible à la casse. Sans ce volume, rien ne change.
+#   Les dossiers système que macOS met à la racine du volume (.Spotlight-V100,
+#   .Trashes…) sont exclus de la synchro.
+
+set -euo pipefail
+
+# ── Configuration ───────────────────────────────────────────────────────────
+MAC_HOST="${MAC_HOST:-mac}"                # alias SSH du Mac (~/.ssh/config)
+LOCAL_DIR="${LOCAL_DIR:-$HOME/Workspace}"  # sur le Fedora
+REMOTE_DIR="${REMOTE_DIR:-Workspace}"      # sur le Mac, relatif à ton home
+MAC_UNISON="${MAC_UNISON:-}"               # unison sur le Mac (vide : cherché, Homebrew compris)
+
+# Jamais synchronisés : chaque machine garde les siens.
+# Noms de fichiers ou dossiers, où qu'ils soient :
+IGNORE_NAMES=(
+  node_modules .venv venv __pycache__                  # dépendances
+  target .next .nuxt .svelte-kit .astro .turbo         # builds
+  .cache .parcel-cache .pytest_cache .mypy_cache .ruff_cache
+  .terraform .direnv
+  .DS_Store  # créés par le Finder
+)
+# Motifs Unison complets (voir « Path specification » dans unison -doc all) :
+IGNORE_PATTERNS=(
+  'Regex (.*/)?vendor/bundle'    # gems installées dans le projet
+  'Regex (.*/)?log/[^/]*\.log'   # logs Rails
+  # tmp/ est synchronisé, sauf ce que Rails y met et qui est propre à chaque
+  # machine : caches (bootsnap…, réécrits des deux côtés : conflits à chaque
+  # fois), pids (un server.pid copié bloquerait rails s), sockets.
+  'Regex (.*/)?tmp/(cache|pids|sockets)'
+  # Fichiers système que macOS met à la racine d'un volume (le workspace du Mac
+  # est sur son propre volume) : illisibles, et sans rapport avec ton code.
+  'Path .Spotlight-V100' 'Path .Trashes' 'Path .fseventsd' 'Path .TemporaryItems'
+  'Path .DocumentRevisions-V100' 'Path .VolumeIcon.icns' 'Path .apdisk'
+  'Path .com.apple.timemachine.donotpresent'
+)
+# ────────────────────────────────────────────────────────────────────────────
+
+STATE_DIR="$HOME/.local/state/sync-workspace"
+RAW_LOG="$STATE_DIR/last-run.log"          # sortie brute d'Unison, dernière exécution
+SSH_LOG="$STATE_DIR/ssh.log"               # messages de ssh pendant la synchro
+SSH_WRAPPER="$STATE_DIR/ssh"
+REMOTE_ROOT="ssh://$MAC_HOST/$REMOTE_DIR"
+
+if [ -t 1 ]; then
+  BOLD=$'\033[1m' GREEN=$'\033[32m' YELLOW=$'\033[33m' RED=$'\033[31m' RESET=$'\033[0m'
+else
+  BOLD='' GREEN='' YELLOW='' RED='' RESET=''
+fi
+
+say() { printf '%s\n' "$*"; }
+die() { printf '%s✗ %s%s\n' "$RED" "$*" "$RESET" >&2; exit 1; }
+
+# Affiche un chemin avec ~ à la place de ton home
+tilde() {
+  case $1 in
+    "$HOME"/*) printf '%s/%s' '~' "${1#"$HOME"/}" ;;
+    *)         printf '%s' "$1" ;;
+  esac
+}
+
+usage() {
+  cat <<EOF
+Usage : $(basename "$0") [-n] [-i] [--prefer fedora|mac]
+
+Synchronise $(tilde "$LOCAL_DIR") entre ce Fedora et le Mac ($MAC_HOST:~/$REMOTE_DIR),
+dans les deux sens. À lancer avant d'aller travailler sur le Mac, et au retour.
+
+  (sans option)        synchronise ; les conflits sont laissés de côté et listés
+  -n, --dry-run        montre ce qui changerait, sans rien toucher
+  -i, --interactive    te laisse trancher chaque conflit, puis demande confirmation
+  --prefer fedora|mac  règle tous les conflits en faveur de ce côté
+  -h, --help           affiche cette aide
+
+Anciennes versions des fichiers remplacés : ~/.unison/backup, sur chaque machine
+Sortie brute de la dernière synchro       : $(tilde "$RAW_LOG")
+EOF
+}
+
+# « unison version 2.54.0 (ocaml 5.3.0) » → 2.54.0
+parse_version() { sed -n 's/.*unison version \([0-9][0-9.]*\).*/\1/p' | head -n 1; }
+
+# Vrai si la version vaut au moins 2.53 : deux versions ≥ 2.52 savent se parler,
+# et le script utilise des options de la 2.53. Version illisible : on laisse faire.
+version_ok() {
+  local major minor
+  case $1 in [0-9]*.[0-9]*) ;; *) return 0 ;; esac
+  major=${1%%.*} minor=${1#*.}
+  minor=${minor%%.*}
+  [ "$major" -gt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -ge 53 ]; }
+}
+
+# Script envoyé au Mac. En SSH non interactif, le PATH du Mac ne contient pas
+# Homebrew : on y cherche unison explicitement. Le nom Bonjour du Mac servira de
+# nom fixe à Unison (son hostname change selon le réseau, et Unison croirait
+# alors à une première synchro).
+mac_probe() {
+  printf "remote_dir='%s'\ncandidates='%s'\n" "$REMOTE_DIR" \
+    "${MAC_UNISON:-unison /opt/homebrew/bin/unison /usr/local/bin/unison}"
+  cat <<'EOF'
+u=''
+for c in $candidates; do
+  if command -v "$c" >/dev/null 2>&1; then u=$(command -v "$c"); break; fi
+done
+[ -n "$u" ] || exit 3
+cd && mkdir -p "$remote_dir" .unison || exit 4
+echo "unison-path: $u"
+echo "mac-name: $(scutil --get LocalHostName 2>/dev/null)"
+# Le dossier est-il sur un volume sensible à la casse ? (test réel, en créant
+# un fichier et en cherchant son nom en majuscules)
+t=".sync-workspace-casse-$$"
+if : > "$remote_dir/$t" 2>/dev/null; then
+  if [ -e "$remote_dir/$(printf '%s' "$t" | tr a-z A-Z)" ]; then echo "mac-case: insensitive"
+  else echo "mac-case: sensitive"
+  fi
+  rm -f "$remote_dir/$t"
+fi
+"$u" -version
+EOF
+}
+
+# ssh passe sa sortie d'erreur en mode non bloquant. Si elle est partagée avec
+# celle d'Unison (qui la lui transmet), Unison plante (« Sys_blocked_io ») dès
+# que l'affichage prend un peu de retard. Unison lance donc ssh via ce petit
+# relais, qui envoie les messages de ssh dans un fichier à part.
+write_ssh_wrapper() {
+  printf '#!/bin/sh\nexec ssh "$@" 2>>%s\n' "'$SSH_LOG'" > "$SSH_WRAPPER"
+  chmod +x "$SSH_WRAPPER"
+  : > "$SSH_LOG"
+}
+
+# Vérifie le Mac et prépare la commande qui y lancera Unison (SERVER_CMD).
+# MAC_CASE : « sensitive » si son dossier est sur un volume sensible à la casse.
+check_mac() {
+  local out status=0 version mac_unison mac_name
+  out=$(mac_probe | ssh -o BatchMode=yes -o ConnectTimeout=5 "$MAC_HOST" sh -s 2>&1) || status=$?
+  case $status in
+    0) ;;
+    3) die "unison introuvable sur le Mac. Installe-le avec : brew install unison" ;;
+    4) die "Impossible de créer ~/$REMOTE_DIR sur le Mac." ;;
+    *) if [ -n "$out" ]; then printf '%s\n' "$out" >&2; fi
+       die "Mac injoignable en SSH ($MAC_HOST) : éteint, en veille, sur un autre réseau, ou « Session à distance » désactivée ? Teste : ssh $MAC_HOST" ;;
+  esac
+  mac_unison=$(printf '%s\n' "$out" | sed -n 's/^unison-path: //p' | head -n 1)
+  mac_name=$(printf '%s\n' "$out" | sed -n 's/^mac-name: //p' | head -n 1 | tr -cd 'A-Za-z0-9-')
+  version=$(printf '%s\n' "$out" | parse_version)
+  version_ok "$version" \
+    || die "Unison $version sur le Mac est trop ancien : il faut 2.53 ou plus (brew upgrade unison)."
+  SERVER_CMD=$mac_unison
+  if [ -n "$mac_name" ]; then SERVER_CMD="env UNISONLOCALHOSTNAME=$mac_name $mac_unison"; fi
+  MAC_CASE=$(printf '%s\n' "$out" | sed -n 's/^mac-case: //p' | head -n 1)
+}
+
+# Script lancé sur chaque machine (sh -s -- noms d'archives) : dit où Unison y
+# range ses fichiers, et où se trouve chaque archive demandée, en la cherchant
+# aussi là où Unison a pu la ranger avant. Sur macOS, Unison utilise
+# ~/Library/Application Support/Unison tant que ~/.unison n'existe pas (et
+# check_mac crée ~/.unison sur le Mac).
+# Sortie : « active <dossier> » puis « found <nom> <dossier> <date> <epoch> »
+archive_probe() {
+  cat <<'EOF'
+if [ -n "${UNISON:-}" ]; then active=$UNISON
+elif [ -d "$HOME/.unison" ] || [ "$(uname)" != Darwin ]; then active=$HOME/.unison
+else active="$HOME/Library/Application Support/Unison"
+fi
+tilde() { case $1 in "$HOME"/*) printf '~/%s' "${1#"$HOME"/}" ;; *) printf '%s' "$1" ;; esac; }
+mtime() {
+  if [ "$(uname)" = Darwin ]; then stat -f "%Sm$(printf '\t')%m" -t '%d/%m/%Y à %H:%M' "$1"
+  else date -r "$1" "+%d/%m/%Y à %H:%M$(printf '\t')%s"
+  fi 2>/dev/null
+}
+printf 'active\t%s\n' "$(tilde "$active")"
+for name in "$@"; do
+  first=1
+  for d in "$active" "$HOME/.unison" "$HOME/Library/Application Support/Unison"; do
+    if [ "$first" = 1 ]; then first=0; elif [ "$d" = "$active" ]; then continue; fi
+    [ -f "$d/$name" ] || continue
+    printf 'found\t%s\t%s\t%s\n' "$name" "$(tilde "$d")" "$(mtime "$d/$name")"
+  done
+done
+EOF
+}
+
+# Chemin à coller dans une commande : guillemets s'il le faut, ~ laissé dehors
+cmd_path() {
+  case $1 in
+    *[!A-Za-z0-9._/~-]*)
+      # shellcheck disable=SC2088  # ~ littéral : la commande est affichée, pas lancée
+      case $1 in
+        '~/'*) printf '~/"%s"' "${1#'~/'}" ;;
+        *)     printf '"%s"' "$1" ;;
+      esac ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# Commande à lancer depuis le Fedora pour agir sur ce côté
+on_side() {
+  if [ "$1" = fedora ]; then printf '%s' "$2"; else printf "ssh %s '%s'" "$MAC_HOST" "$2"; fi
+}
+
+# Unison garde sur chaque machine une archive : l'état de chaque fichier à la
+# dernière synchro. S'il la trouve d'un côté et pas de l'autre, il refuse de
+# continuer (« inconsistent state »). Montre où est chacune, cherche la
+# manquante là où Unison a pu la ranger, et donne la commande qui répare.
+# Échoue si la sortie d'Unison n'a pas la forme attendue.
+explain_archive_mismatch() {
+  local local_name name host state side label dir hash kind a b c d i out cmd clear_cmd
+  local fdir fdate fepoch present_epoch='' lost=0 unknown=0 from_library=0 dates_differ=0
+  local -a names=() sides=() states=() fedora_names=() mac_names=()
+  local -a fix_cmds=() reset_cmds=() all_reset_cmds=()
+  local -A active=() found_dir=() found_date=() found_epoch=()
+
+  # « Archive arb2957… on host fedora2.home should be DELETED ». Le nom d'hôte
+  # du Fedora est celui que donne Unison par défaut (voir UNISONLOCALHOSTNAME).
+  local_name=${UNISONLOCALHOSTNAME:-$(uname -n)}
+  while read -r name host state; do
+    if [ "$host" = "$local_name" ]; then side=fedora; fedora_names+=("$name")
+    else side=mac; mac_names+=("$name"); fi
+    names+=("$name") sides+=("$side") states+=("$state")
+  done < <(tr '\r' '\n' <"$RAW_LOG" |
+           sed -nE 's/^ *Archive ([^ ]+) on host ([^ ]+) (should be DELETED|is MISSING).*/\1 \2 \3/p')
+  [ ${#names[@]} -gt 0 ] || return 1
+
+  for side in fedora mac; do
+    if [ "$side" = fedora ]; then
+      out=$(archive_probe | sh -s -- ${fedora_names[@]+"${fedora_names[@]}"}) || out=''
+    else
+      out=$(archive_probe | ssh -o BatchMode=yes -o ConnectTimeout=5 "$MAC_HOST" \
+              sh -s -- ${mac_names[@]+"${mac_names[@]}"} 2>/dev/null) || out=''
+    fi
+    while IFS=$'\t' read -r kind a b c d; do
+      case $kind in
+        active) active[$side]=$a ;;
+        found)  if [ -z "${found_dir[$side:$a]+x}" ]; then
+                  found_dir[$side:$a]=$b found_date[$side:$a]=$c found_epoch[$side:$a]=$d
+                fi ;;
+      esac
+    done <<<"$out"
+  done
+
+  # Date de l'archive restante, pour la comparer à celle retrouvée ailleurs
+  for i in "${!names[@]}"; do
+    if [ "${states[i]}" = "should be DELETED" ]; then
+      present_epoch=${found_epoch[${sides[i]}:${names[i]}]-}
+    fi
+  done
+
+  {
+    say "${RED}✗ Synchro annulée : l'état de la dernière synchro (l'« archive » d'Unison) existe d'un côté, mais plus de l'autre.${RESET}"
+    say "  Sans les deux, Unison ne peut pas distinguer un fichier supprimé d'un fichier créé."
+    say ""
+    for i in "${!names[@]}"; do
+      name=${names[i]} side=${sides[i]} hash=${names[i]#ar}
+      label=Fedora; if [ "$side" = mac ]; then label=Mac; fi
+      dir=${active[$side]-}
+      if [ -z "$dir" ]; then
+        if [ "$side" = mac ]; then printf '  %-7s %s\n' "$label" "non vérifié : ssh $MAC_HOST a échoué"
+        else printf '  %-7s %s\n' "$label" "non vérifié"; fi
+        unknown=1
+        continue
+      fi
+      # Pour repartir de zéro : mettre l'archive de côté (une fois au bon endroit)
+      clear_cmd=$(on_side "$side" \
+        "mkdir -p $(cmd_path "$dir/old-archives") && mv $(cmd_path "$dir")/*$hash $(cmd_path "$dir/old-archives")/")
+      fdir=${found_dir[$side:$name]-} fdate=${found_date[$side:$name]-} fepoch=${found_epoch[$side:$name]-}
+      if [ "${states[i]}" = "should be DELETED" ]; then
+        printf '  %-7s %s\n' "$label" "$dir/$name"
+        if [ -n "$fdate" ]; then printf '  %-7s %s\n' '' "dernière synchro le $fdate"; fi
+        reset_cmds+=("$clear_cmd") all_reset_cmds+=("$clear_cmd")
+      elif [ -n "$fdir" ]; then
+        printf '  %-7s %s\n' "$label" "absente de $dir, là où Unison la cherche"
+        printf '  %-7s %s\n' '' "${BOLD}trouvée dans $fdir${RESET}${fdate:+ (modifiée le $fdate)}"
+        case $fdir in *"Library/Application Support/Unison"*) from_library=1 ;; esac
+        fix_cmds+=("$(on_side "$side" "mv $(cmd_path "$fdir")/*$hash $(cmd_path "$dir")/")")
+        all_reset_cmds+=("$clear_cmd")
+        if [ -n "$fepoch" ] && [ -n "$present_epoch" ] &&
+           [ $(( fepoch > present_epoch ? fepoch - present_epoch : present_epoch - fepoch )) -gt 300 ]; then
+          dates_differ=1
+        fi
+      else
+        printf '  %-7s %s\n' "$label" "introuvable : ni dans $dir, ni ailleurs où Unison a pu la ranger"
+        lost=1
+      fi
+    done
+    say ""
+
+    if [ "$unknown" = 1 ]; then
+      say "  Relance quand le Mac est joignable : le script dira où est son archive."
+    elif [ "$lost" = 0 ] && [ ${#fix_cmds[@]} -gt 0 ]; then
+      if [ "$from_library" = 1 ]; then
+        say "  Elle n'est pas perdue. Sur macOS, Unison range ses fichiers dans ~/Library/Application Support/Unison"
+        say "  tant que ~/.unison n'existe pas ; ce script crée ~/.unison, et depuis Unison ne regarde plus que là."
+      else
+        say "  Elle n'est pas perdue, juste rangée ailleurs que là où Unison la cherche."
+      fi
+      say "  Pour la remettre en place, puis vérifier :"
+      for cmd in "${fix_cmds[@]}"; do say "    $cmd"; done
+      say "    $(basename "$0") -n"
+      if [ "$dates_differ" = 1 ]; then
+        say ""
+        say "  Les deux archives n'ont pas la même date. Si celle retrouvée vient d'une synchro plus ancienne,"
+        say "  Unison répondra « On-disk archives are not identical » : mets alors les deux de côté"
+        say "  et repars de zéro (première synchro, à vérifier avec -n) :"
+        for cmd in "${all_reset_cmds[@]}"; do say "    $cmd"; done
+      fi
+    else
+      say "  Il faut repartir de zéro. Mets de côté l'archive qui reste, puis regarde le plan :"
+      for cmd in "${reset_cmds[@]}"; do say "    $cmd"; done
+      say "    $(basename "$0") -n"
+      say "  Ce sera une première synchro : ce qui n'existe que d'un côté est copié de l'autre (y compris ce"
+      say "  que tu as supprimé depuis la dernière synchro), et tout ce qui diffère devient un conflit."
+      say "  --prefer tranche alors toutes les différences en faveur d'un côté : regarde l'aperçu avant."
+    fi
+  } >&2
+}
+
+# Met en forme la sortie d'Unison (-batch) : étapes et progression en direct
+# (sur le terminal uniquement), puis liste des changements par sens, conflits,
+# échecs et résumé. Les lignes inconnues (erreurs) passent telles quelles.
+read -r -d '' FORMATTER <<'AWK' || true
+function trim(s) { sub(/[ \t\r]+$/, "", s); return s }
+function plural(n, one, many) { return n > 1 ? many : one }
+function duration(s) { return s >= 60 ? int(s / 60) " min " sprintf("%02d", s % 60) " s" : s " s" }
+function symbol(st) {
+  if (st == "deleted") return "-"
+  if (st == "changed" || st == "props" || st ~ /^chgd/) return "~"
+  return "+"
+}
+function describe(st) {
+  if (st == "deleted") return "supprimé"
+  if (st == "props") return "droits modifiés"
+  if (st == "changed" || st ~ /^chgd/) return "modifié"
+  if (st ~ /dir$/) return "dossier créé"
+  return "créé"
+}
+# Dépôt git contenant ce chemin (« » s'il n'est pas dans un .git)
+function git_repo(p,   i) {
+  if (p ~ /^\.git(\/|$)/) return "."
+  i = index(p, "/.git/")
+  if (i == 0 && p ~ /\/\.git$/) i = length(p) - 4
+  return i > 0 ? substr(p, 1, i - 1) : ""
+}
+function add(side, st, p,   repo, key) {
+  count[side]++
+  repo = git_repo(p)
+  if (repo != "") {            # le contenu d'un .git se résume en une ligne par dépôt
+    key = side SUBSEP repo
+    if (!(key in git_seen)) {
+      git_seen[key] = 1
+      git_repos[side, ++n_repos[side]] = repo == "." ? ".git" : repo "/.git"
+    }
+    return
+  }
+  if (st ~ /dir$/) p = p "/"
+  items[side, ++n_items[side]] = "  " symbol(st) " " p
+}
+function print_side(side, label,   i) {
+  if (!count[side]) return
+  print BOLD label RESET
+  for (i = 1; i <= n_items[side] && i <= 40; i++) print items[side, i]
+  if (n_items[side] > 40) print "  … et " (n_items[side] - 40) " autres (détail : " rawlog ")"
+  for (i = 1; i <= n_repos[side]; i++) print "  ~ " git_repos[side, i]
+}
+
+# ── Affichage en direct (une ligne réécrite sur place, sur stderr) ──
+# extra : octets en trop dans length() pour les caractères de la barre, quand
+# awk compte en octets (locale non UTF-8), pour ne jamais déborder de la ligne.
+function show(text, extra,   width) {
+  if (!tty) return
+  width = cols - 1 + extra
+  if (length(text) > width) text = substr(text, 1, width - 1) "…"
+  printf "\r\033[K%s", text > "/dev/stderr"
+  progress_shown = 1
+}
+# Comme show(), avec un chemin à la fin : s'il ne tient pas, on garde sa fin
+# (le nom du fichier) plutôt que son début.
+function show_path(text, path, extra,   room) {
+  room = cols - 1 - (length(text) - extra) - 2
+  if (path != "" && room >= 10) {
+    if (length(path) > room) path = "…" substr(path, length(path) - room + 2)
+    text = text "  " path
+  }
+  show(text, extra)
+}
+function clear_progress() {
+  if (progress_shown) { printf "\r\033[K" > "/dev/stderr"; progress_shown = 0 }
+}
+function repeat(ch, n,   s) { s = ""; while (n-- > 0) s = s ch; return s }
+# « 42%  3/10  (40.2 MiB of 95.4 MiB)  29.6 MiB/s    00:00:02 ETA »
+function show_transfer(frame,   pct, bytes, rate, eta, n, text, extra) {
+  pct = frame; sub(/%.*/, "", pct); pct += 0
+  if (pct > 100) pct = 100
+  bytes = ""; rate = ""; eta = ""
+  if (match(frame, /\([^()]* of [^()]*\)/)) {
+    bytes = substr(frame, RSTART + 1, RLENGTH - 2); sub(/ of /, " / ", bytes)
+  }
+  if (match(frame, /[0-9.]+ [KMGTP]?i?B\/s/)) rate = substr(frame, RSTART, RLENGTH)
+  if (match(frame, /[0-9:]+ ETA/)) {
+    eta = substr(frame, RSTART, RLENGTH - 4)
+    sub(/^00:/, "", eta); sub(/^0/, "", eta)
+  }
+  n = int(pct * BAR / 100)
+  text = "  " repeat("█", n) repeat("░", BAR - n) " " sprintf("%3d", pct) " %"
+  if (bytes != "") text = text "  " bytes
+  if (eta != "") text = text "  reste " eta
+  extra = BAR * (length("█") - 1)
+  # Le débit passe après le nom du fichier quand la ligne est étroite
+  if (rate != "" && (current == "" || cols - 1 - (length(text) + length(rate) + 2 - extra) - 2 >= 20))
+    text = text "  " rate
+  show_path(text, current, extra)
+}
+
+# Position de l'espace avant la raison dans « chemin (raison) » : dernier « (»
+# suivi d'une lettre (un chemin peut contenir « (1) », une raison « opendir(… »)
+function reason_start(s,   pos, off, j) {
+  pos = 0; off = 0
+  while ((j = index(substr(s, off + 1), " (")) > 0) {
+    if (substr(s, off + j + 2, 1) ~ /[A-Za-z]/) pos = off + j
+    off += j + 1
+  }
+  return pos
+}
+function unbalanced(s,   opened, closed) {
+  opened = gsub(/\(/, "(", s); closed = gsub(/\)/, ")", s)
+  return opened > closed
+}
+# Ligne de résumé « skipped: chemin (raison) », « failed: … », « partially transferred: … »
+function report(kind, s,   pos, why) {
+  why = ""
+  pos = reason_start(s)
+  if (pos) { why = substr(s, pos + 2); sub(/\)$/, "", why); s = substr(s, 1, pos - 1) }
+  if (kind == "failed") { n_failed++; failed_path[n_failed] = s; failed_why[n_failed] = why; return }
+  if (kind == "partial")
+    why = "copié en partie : " (scan_error != "" ? scan_error : "un élément à l'intérieur n'a pas pu être lu")
+  if (why ~ /with no(creation|update|deletion)/ || (s in is_conflict)) return  # aperçu / conflit déjà listé
+  n_skipped++; skipped_path[n_skipped] = s; skipped_why[n_skipped] = why
+}
+BEGIN {
+  RS = "[\r\n]"                # Unison redessine sa progression avec des \r
+  cmd = "date +%s"; cmd | getline t0; close(cmd)
+  if (cols < 20) cols = 80
+  BAR = 16                     # largeur de la barre de progression
+}
+
+{
+  line = $0
+  if (pending != "") {           # raison d'un résumé qui court sur plusieurs lignes
+    pending = pending " " line
+    if (!unbalanced(pending)) { report(pending_kind, pending); pending = "" }
+    next
+  }
+  if (line ~ /^[ \t]*$/) next
+
+  # ── Étapes et progression ──
+  if (line ~ /^ *[0-9]+%  [0-9]+\/[0-9]+  \(/) { last_frame = line; show_transfer(line); next }
+  if (line ~ /^[|\/\\-] ./) { show_path("  Analyse du " LEFT "…", substr(line, 3), 0); next }
+  if (line ~ /Contacting server/) { show("  Connexion au " RIGHT "…"); next }
+  if (line ~ /^Looking for changes/) { show("  Analyse du " LEFT "…"); next }
+  if (line ~ /Waiting for changes from server/) { show("  Analyse du " RIGHT "…"); next }
+  if (line ~ /^Reconciling changes/) { show("  Comparaison…"); next }
+  if (line ~ /^Propagating updates/) { show("  Copie…"); next }
+  if (line ~ /^Saving synchronizer state/) { show("  Enregistrement de l'état…"); next }
+  if (line ~ / to be synced from /) {          # « 95.4 MiB to be synced from mac to local »
+    amount = line; sub(/ to be synced from .*/, "", amount)
+    if (amount !~ /^0 B$/) {
+      if (line ~ / from local to /) bytes_l = amount; else bytes_r = amount
+    }
+    next
+  }
+  if (line ~ /^(Connected \[|Starting\.\.\.|Unison [0-9.]+ .*propagating changes)/ || line ~ / will be synced, /) next
+  if (line ~ /^[^ :]+ +: /) next               # détails d'un élément (« local : absent »)
+  if (line ~ /^\[root [0-9]+\]: /) {           # erreur de lecture, sur deux lignes
+    scan_error = line; sub(/^\[root [0-9]+\]: /, "", scan_error); scan_error_cont = 1; next
+  }
+  if (scan_error_cont) { scan_error_cont = 0; if (line !~ /^\[/) { scan_error = scan_error " " line; next } }
+
+  arrow = substr(line, 10, 5)
+  # Plan : « changed  <-?-> changed    chemin », colonne gauche = LEFT
+  if (length(line) > 26 && substr(line, 9, 1) == " " && substr(line, 15, 1) == " " &&
+      (arrow ~ /^[-<>=?M]+$/ || arrow == "error")) {
+    left = trim(substr(line, 1, 8)); right = trim(substr(line, 16, 8)); p = trim(substr(line, 27))
+    if (arrow == "error") { in_error = 1; next }   # détaillé plus bas par « skipped: »
+    # <=?=> : bloqué par l'aperçu, le sens se déduit du côté qui a changé
+    if (arrow == "<-?->" || arrow == "<-M->" || (arrow == "<=?=>" && left != "" && right != "")) {
+      n_conflicts++
+      conflict_path[n_conflicts] = p
+      conflict_why[n_conflicts] = left == right ? describe(left) " des deux côtés" \
+        : describe(left) " sur le " LEFT ", " describe(right) " sur le " RIGHT
+      is_conflict[p] = 1
+    } else if (arrow == "<=?=>") {
+      if (right == "") add("l", left, p); else add("r", right, p)
+    } else if (arrow ~ /^</) {   # y compris <-?-- : copie partielle
+      add("r", right, p)
+    } else {
+      add("l", left, p)
+    }
+    next
+  }
+  if (line ~ /^\[BGN\] /) {      # « [BGN] Copying chemin from /racine to /racine »
+    in_error = 0
+    current = line
+    sub(/^\[BGN\] (Copying properties for|Updating file|Copying|Deleting|Linking|Moving|Updating) /, "", current)
+    if (match(current, / (from|in) (\/|[a-z]+:\/\/)/)) current = substr(current, 1, RSTART - 1)
+    if (last_frame != "") show_transfer(last_frame); else show_path("  Copie…", current, 0)
+    next
+  }
+  if (line ~ /^(No updates to propagate|Nothing to do)/) { in_error = 0; next }
+  if (line ~ /^\[END\] / || line ~ /^Shortcut: /) next
+  if (line ~ /^\[CONFLICT\] /) { skip_reason = 1; next }
+  if (skip_reason && line ~ /^  /) { skip_reason = 0; next }
+  skip_reason = 0
+  if (line ~ /^Synchronization (complete|incomplete)/) { finished = 1; in_error = 0; next }
+  if (line ~ /^  (skipped|failed|partially transferred): /) {
+    kind = line ~ /^  skipped/ ? "skipped" : line ~ /^  failed/ ? "failed" : "partial"
+    s = line
+    sub(/^  [a-z ]+: /, "", s)
+    if (unbalanced(s)) { pending = s; pending_kind = kind } else report(kind, s)
+    next
+  }
+  if (in_error) next             # détail d'une erreur de lecture, repris par « skipped: »
+  if (line ~ /^Warning: No archive files were found/) { first_run = 1; in_warning = 1; next }
+  if (in_warning) { if (line ~ /advice on how to correct/) in_warning = 0; next }
+  if (line ~ /completely emptied/) { big_deletion = 1; in_big = 1; next }
+  if (in_big) { if (line ~ /^Aborting/) in_big = 0; next }
+  # Archive présente d'un seul côté : le script shell explique et cherche
+  if (line ~ /inconsistent state/) { archive_mismatch = 1; in_mismatch = 1; next }
+  if (in_mismatch) { if (line ~ /ignorearchives/) in_mismatch = 0; next }
+  clear_progress()               # autre chose (erreur…) : affiché tel quel
+  print line
+  errors++
+}
+
+END {
+  clear_progress()
+  cmd | getline t1; close(cmd)
+  if (big_deletion || archive_mismatch || (errors && !finished)) exit   # le script shell prend le relais
+  total = count["l"] + count["r"]
+  if (mode == "preview") print BOLD "Aperçu, rien n'est modifié" RESET
+  if (first_run) print "Première synchro de ces dossiers : ce qui n'existe que d'un côté est copié de l'autre, ce qui diffère est un conflit."
+  print_side("r", RIGHT " → " LEFT)
+  print_side("l", LEFT " → " RIGHT)
+
+  moved = ""
+  if (bytes_r != "") moved = bytes_r " " RIGHT " → " LEFT
+  if (bytes_l != "") moved = moved (moved != "" ? ", " : "") bytes_l " " LEFT " → " RIGHT
+  if (total == 0 && !n_conflicts && !n_skipped && !n_failed)
+    print GREEN "✓ Les deux côtés sont déjà à jour." RESET
+  else if (mode != "preview") {
+    if (n_failed) print YELLOW "⚠ Synchro terminée en " duration(t1 - t0) ", avec des échecs" RESET
+    else print GREEN "✓ Synchro terminée en " duration(t1 - t0) RESET (moved != "" ? " (" moved ")" : "")
+  }
+
+  if (n_conflicts) {
+    print ""
+    print YELLOW "⚠ " n_conflicts " " plural(n_conflicts, "conflit", "conflits") ", " \
+      (mode == "preview" ? "qui " plural(n_conflicts, "serait laissé tel quel", "seraient laissés tels quels") \
+                         : plural(n_conflicts, "laissé tel quel", "laissés tels quels")) \
+      " des deux côtés :" RESET
+    for (i = 1; i <= n_conflicts && i <= 40; i++) print "    " conflict_path[i] "  (" conflict_why[i] ")"
+    if (n_conflicts > 40) print "    …"
+    print "  Pour trancher : sync-workspace -i (au cas par cas) ou --prefer fedora|mac (tous d'un coup)"
+  }
+  if (n_skipped) {
+    print ""
+    print YELLOW "⚠ Laissés de côté :" RESET
+    for (i = 1; i <= n_skipped && i <= 40; i++) print "    " skipped_path[i] (skipped_why[i] != "" ? "  (" skipped_why[i] ")" : "")
+    print "  S'il n'a rien à faire dans la synchro (volume de conteneur…), ajoute-le aux exclusions en haut du script."
+  }
+  if (n_failed) {
+    print ""
+    print RED "✗ " n_failed " " plural(n_failed, "échec", "échecs") " :" RESET
+    for (i = 1; i <= n_failed && i <= 40; i++) print "    " failed_path[i] (failed_why[i] != "" ? "  (" failed_why[i] ")" : "")
+    print "  Relance la synchro ; si ça persiste, ajoute le chemin aux exclusions ou regarde ~/.unison/unison.log"
+  }
+}
+AWK
+
+main() {
+  local mode=sync prefer='' unison_bin version name pattern status
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -n|--dry-run)     mode=preview ;;
+      -i|--interactive) mode=interactive ;;
+      --prefer)         [ $# -ge 2 ] || die "--prefer attend fedora ou mac"; prefer=$2; shift ;;
+      --prefer=*)       prefer=${1#--prefer=} ;;
+      -h|--help)        usage; exit 0 ;;
+      *)                usage >&2; exit 2 ;;
+    esac
+    shift
+  done
+  case $prefer in
+    ''|fedora|mac) ;;
+    *) die "--prefer attend fedora ou mac, pas « $prefer »." ;;
+  esac
+  case ${LOCAL_DIR%/} in
+    ''|"$HOME") die "LOCAL_DIR doit être un dossier dédié, pas « $LOCAL_DIR »." ;;
+  esac
+  [ -d "$LOCAL_DIR" ] || die "$LOCAL_DIR n'existe pas (voir LOCAL_DIR en haut du script)."
+
+  if ! unison_bin=$(command -v unison); then
+    if [ -f /run/.toolboxenv ]; then
+      die "unison introuvable dans cette toolbox : installe-le dedans (sudo dnf install unison) ou lance le script depuis l'hôte."
+    fi
+    die "unison introuvable. Silverblue : rpm-ostree install unison, puis redémarrer ; Workstation : sudo dnf install unison"
+  fi
+  version=$("$unison_bin" -version 2>/dev/null | parse_version) || true
+  version_ok "$version" \
+    || die "Unison $version sur ce Fedora est trop ancien : il faut 2.53 ou plus."
+  check_mac
+  mkdir -p "$STATE_DIR"
+  write_ssh_wrapper
+
+  local -a args
+  args=(
+    "$LOCAL_DIR" "$REMOTE_ROOT"      # gauche = Fedora, droite = Mac
+    -ui text
+    -servercmd "$SERVER_CMD"
+    -sshcmd "$SSH_WRAPPER"           # ssh, avec sa sortie d'erreur à part
+    -sshargs '-C -o BatchMode=yes'   # compression ; jamais de question en cours de route
+    -times                           # garde les dates de modification
+    -perms 0o111                     # droits : seuls les bits d'exécution (umask différents)
+    -backup 'Name *' -backuploc central -maxbackups 3
+    -confirmbigdel                   # dossier vidé d'un côté : on n'efface pas l'autre
+  )
+  # Dès qu'un des deux côtés est un Mac, Unison le croit insensible à la casse,
+  # quel que soit son disque. On le détrompe quand le test de check_mac a montré
+  # que le dossier du Mac distingue bien « a » et « A » (sinon, deux fichiers
+  # comme Readme.md et README.md s'écraseraient l'un l'autre sur le Mac).
+  if [ "${MAC_CASE:-}" = sensitive ]; then args+=(-ignorecase false); fi
+  for name in ${IGNORE_NAMES[@]+"${IGNORE_NAMES[@]}"}; do args+=(-ignore "Name $name"); done
+  for pattern in ${IGNORE_PATTERNS[@]+"${IGNORE_PATTERNS[@]}"}; do args+=(-ignore "$pattern"); done
+  case $prefer in
+    fedora) args+=(-prefer "$LOCAL_DIR") ;;
+    mac)    args+=(-prefer "$REMOTE_ROOT") ;;
+  esac
+
+  if [ "$mode" = interactive ]; then
+    say "${BOLD}Fedora ($(tilde "$LOCAL_DIR")) ⇄ Mac ($MAC_HOST:~/$REMOTE_DIR)${RESET}"
+    say "Colonne de gauche : le Fedora, de droite : le Mac. Unison ne s'arrête que sur les conflits :"
+    say "  >  garde la version du Fedora     <  garde celle du Mac"
+    say "  /  laisse de côté                 d  montre la différence"
+    say "À la fin : y pour appliquer, q pour quitter sans rien changer."
+    say ""
+    exec "$unison_bin" "${args[@]}" -auto
+  fi
+
+  if [ "$mode" = preview ]; then
+    # Rien n'a le droit de changer, d'un côté comme de l'autre : Unison calcule
+    # le plan et le montre, sans rien écrire.
+    args+=(-noupdate "$LOCAL_DIR" -nodeletion "$LOCAL_DIR" -nocreation "$LOCAL_DIR"
+           -noupdate "$REMOTE_ROOT" -nodeletion "$REMOTE_ROOT" -nocreation "$REMOTE_ROOT")
+  fi
+
+  local awk_bin tty=0 cols=80
+  awk_bin=$(command -v gawk || command -v awk)
+  if [ -t 2 ]; then
+    tty=1
+    cols=$( (stty size </dev/tty) 2>/dev/null | cut -d' ' -f2) || true
+  fi
+
+  # Quoi qu'il arrive (plantage, Ctrl-C), le terminal retrouve son état.
+  SAVED_TTY=''
+  if [ -t 0 ]; then SAVED_TTY=$(stty -g 2>/dev/null) || SAVED_TTY=''; fi
+  if [ -n "$SAVED_TTY" ]; then trap 'stty "$SAVED_TTY" 2>/dev/null' EXIT; fi
+
+  set +e
+  "$unison_bin" "${args[@]}" -batch -color false </dev/null 2>&1 \
+    | tee "$RAW_LOG" \
+    | "$awk_bin" -v mode="$mode" -v tty="$tty" -v cols="${cols:-80}" -v rawlog="$(tilde "$RAW_LOG")" \
+          -v LEFT=Fedora -v RIGHT=Mac \
+          -v BOLD="$BOLD" -v GREEN="$GREEN" -v YELLOW="$YELLOW" -v RED="$RED" -v RESET="$RESET" \
+          "$FORMATTER"
+  status=${PIPESTATUS[0]}
+  set -e
+
+  if [ "$status" -ge 3 ]; then
+    if grep -q 'completely emptied' "$RAW_LOG"; then
+      die "Un des deux dossiers est vide (supprimé ou vidé par erreur ?) : synchro annulée, pour ne pas tout effacer de l'autre côté."
+    fi
+    if grep -q 'incompatible case sensitivity' "$RAW_LOG"; then
+      die "Le dossier du Mac a changé de mode de casse depuis la dernière synchro (passé sur un volume sensible à la casse ?) : les archives listées ci-dessus ne servent plus. Mets-les de côté sur chaque machine (dans ~/.unison), puis relance avec -n : ce sera une première synchro."
+    fi
+    if grep -q 'inconsistent state' "$RAW_LOG"; then
+      if explain_archive_mismatch; then exit 1; fi
+      tr '\r' '\n' <"$RAW_LOG" | sed -n '/inconsistent state/,/ignorearchives/p' >&2
+    fi
+    if [ -s "$SSH_LOG" ]; then sed 's/^/ssh : /' "$SSH_LOG" >&2; fi
+    die "Synchro interrompue (voir ci-dessus). Tu peux la relancer : ce qui n'a pas été fait le sera."
+  fi
+  if [ "$mode" = preview ]; then exit 0; fi
+  exit "$status"
+}
+
+main "$@"
+

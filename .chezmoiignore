@@ -15,6 +15,11 @@ README.md
 .local/bin/bat
 {{ end }}
 
+{{ if or .isContainer (not (and (hasKey .chezmoi.osRelease "id") (eq .chezmoi.osRelease.id "fedora"))) }}
+# Synchro du workspace vers le Mac : se lance depuis le Fedora hôte uniquement
+.local/bin/sync-workspace
+{{ end }}
+
 {{- if .isContainer }}
 .config/foo
 .config/goo/config
