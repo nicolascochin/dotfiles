@@ -2,6 +2,7 @@
 # ~/.local/bin/podman (et ~/.local/bin/getenforce, lien vers ce script)
 # Wrapper qui redirige vers la commande de l'hôte appelée sous ce nom (podman, getenforce),
 # quel que soit le contexte d'exécution (Flatpak, Distrobox, ou natif).
+# Sur macOS, il n'y a pas de Podman : `podman` est redirigé vers `docker`.
 #
 # getenforce : le CLI Dev Containers l'appelle pour savoir s'il doit passer
 # --security-opt label=disable à Podman. Dans un Flatpak ou une Distrobox, le getenforce
@@ -10,7 +11,11 @@
 
 cmd=$(basename "$0")
 
-if [ -f /.flatpak-info ]; then
+if [ "$(uname -s)" = "Darwin" ]; then
+    # macOS : on passe par Docker (Docker Desktop, OrbStack, Colima…)
+    exec docker "$@"
+
+elif [ -f /.flatpak-info ]; then
     # On est dans un sandbox Flatpak
     exec flatpak-spawn --host "$cmd" "$@"
 

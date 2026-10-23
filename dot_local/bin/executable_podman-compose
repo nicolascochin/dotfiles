@@ -2,8 +2,13 @@
 # ~/.local/bin/podman-compose
 # Wrapper qui redirige vers le podman-compose de l'hôte, quel que soit
 # le contexte d'exécution (Flatpak, Distrobox, ou natif).
+# Sur macOS, il n'y a pas de Podman : on redirige vers `docker compose`.
 
-if [ -f /.flatpak-info ]; then
+if [ "$(uname -s)" = "Darwin" ]; then
+    # macOS : on passe par Docker Compose (plugin de la CLI docker)
+    exec docker compose "$@"
+
+elif [ -f /.flatpak-info ]; then
     # On est dans un sandbox Flatpak
     exec flatpak-spawn --host podman-compose "$@"
 
