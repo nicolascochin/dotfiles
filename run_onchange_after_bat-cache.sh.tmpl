@@ -1,0 +1,9 @@
+#!/bin/sh
+# Construit le cache de bat pour qu'il trouve les thèmes de ~/.config/bat/themes.
+# chezmoi relance ce script quand un thème change (empreintes ci-dessous),
+# au lieu de reconstruire le cache à chaque ouverture de shell.
+# {{ range glob (joinPath .chezmoi.sourceDir "dot_config/bat/themes/*") }}{{ include . | sha256sum }} {{ end }}
+
+# Sur Debian, bat s'appelle batcat (le wrapper ~/.local/bin/bat n'est pas forcément dans le PATH ici)
+bat=$(command -v bat || command -v batcat) || exit 0
+"$bat" cache --build >/dev/null

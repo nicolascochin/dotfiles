@@ -8,8 +8,6 @@ then
   }
 #  unalias help
 
+  # Le cache des thèmes est construit par run_onchange_after_bat-cache.sh
   export BAT_THEME="Catppuccin Mocha"
-
-  # Rebuild cache to found themes
-  bat cache --build
 fi
