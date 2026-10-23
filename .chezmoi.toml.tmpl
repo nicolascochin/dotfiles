@@ -13,11 +13,12 @@
 
 {{- if eq .chezmoi.os "linux" -}}
   {{- $env := env "container" -}}
+  {{- /* contains SOUS-CHAÎNE CHAÎNE : $env en second, sinon "" (hôte) donne vrai */ -}}
   {{- $isContainer = or
     (stat "/.dockerenv")
-    (contains $env "docker")
-    (contains $env "podman")
-    (contains $env "lxc")
+    (contains "docker" $env)
+    (contains "podman" $env)
+    (contains "lxc" $env)
   -}}
 {{- end -}}
 
