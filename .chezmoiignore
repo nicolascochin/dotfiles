@@ -3,6 +3,7 @@ README.md
 {{ if eq .chezmoi.os "darwin" }}
 # Pas de SELinux sur macOS : ce lien vers le wrapper podman appellerait docker
 .local/bin/getenforce
+.zshrc.d/command-not-found-linux.zsh
 
 {{ else if eq .chezmoi.os "linux" }}
 .wezterm.lua

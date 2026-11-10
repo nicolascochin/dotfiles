@@ -5,3 +5,4 @@ zsh
 git
 curl
 base-devel
+pkgfile  # command-not-found, base remplie par install-packages
