@@ -1,0 +1,7 @@
+# Arch Linux et dérivées (distrobox).
+# Installés par ~/.local/bin/install-packages : un paquet par ligne.
+# Noms exacts des paquets (vérifiés avec pacman -Q).
+zsh
+git
+curl
+base-devel
