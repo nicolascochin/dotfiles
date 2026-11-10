@@ -1,24 +1,11 @@
-#!/bin/bash
+#!/bin/sh
+# Installe les paquets de dot_config/packages/<famille>.txt avec
+# dot_local/bin/executable_install-packages (détection de la distribution à
+# l'exécution). Script et listes sont pris dans le dépôt source, pour ne pas
+# dépendre de l'ordre dans lequel chezmoi applique les fichiers.
+# chezmoi relance ce script quand l'un d'eux change (empreintes ci-dessous).
+# {{ include "dot_local/bin/executable_install-packages" | sha256sum }}
+# {{ range glob (joinPath .chezmoi.sourceDir "dot_config/packages/*.txt") }}{{ include . | sha256sum }} {{ end }}
 
-{{ $key := index .install .osid | default nil }}
-{{ if not $key }}
-  echo "No packages defined for {{ .osid }}"
-  echo "Exiting..."
-{{ else }}
-
-  PACKAGES_TO_INSTALL=()
-  INSTALL_CMD="{{ index $key "install_cmd" }}"
-  TEST_CMD="{{ index $key "test_cmd" }}"
-
-  {{ $packages := index $key "packages" }}
-  {{ range $packages }}
-    PACKAGE={{ . }}
-    ! $TEST_CMD $PACKAGE > /dev/null 2>&1  && PACKAGES_TO_INSTALL+=($PACKAGE)
-  {{ end }}
-
-
-  if [[ ${#PACKAGES_TO_INSTALL[@]} != 0 ]]; then
-    echo "Install packages: ${PACKAGES_TO_INSTALL[@]}"
-    eval "$INSTALL_CMD ${PACKAGES_TO_INSTALL[@]}"
-  fi
-{{ end }}
+export PACKAGES_DIR={{ joinPath .chezmoi.sourceDir "dot_config/packages" | squote }}
+exec bash {{ joinPath .chezmoi.sourceDir "dot_local/bin/executable_install-packages" | squote }}

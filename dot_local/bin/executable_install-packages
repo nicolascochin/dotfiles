@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# Installe les paquets de ~/.config/packages/<famille>.txt qui manquent
+# (familles : darwin, debian, fedora).
+#
+# La distribution est détectée à l'exécution, pas au rendu chezmoi : le
+# $HOME est partagé entre l'hôte et ses distrobox, donc ce script et ses
+# listes doivent être identiques partout.
+#
+# Lancé par chezmoi (run_onchange_install-packages.sh) et par distroboxctl
+# (bluepill) à la création d'une box. Peut être relancé sans risque.
+#
+# Compatible avec le bash 3.2 de macOS : pas de `set -u` (tableaux vides).
+set -eo pipefail
+
+PACKAGES_DIR="${PACKAGES_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/packages}"
+
+as_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+in_container() {
+    [ -e /run/.containerenv ] || [ -e /.dockerenv ] || [ -n "${container:-}" ]
+}
+
+detect_family() {
+    if [ "$(uname -s)" = Darwin ]; then
+        echo darwin
+        return
+    fi
+
+    [ -r /etc/os-release ] || return 0
+
+    local id
+    # shellcheck disable=SC1091
+    for id in $(. /etc/os-release && echo "${ID:-} ${ID_LIKE:-}"); do
+        case "$id" in
+            debian|ubuntu) echo debian; return ;;
+            fedora)        echo fedora; return ;;
+        esac
+    done
+}
+
+is_installed() {
+    # ${Status} est un champ de dpkg-query, pas une variable shell.
+    # shellcheck disable=SC2016
+    case "$FAMILY" in
+        darwin) brew list "$1" >/dev/null 2>&1 ;;
+        debian) [ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null)" = "install ok installed" ] ;;
+        fedora) rpm -q --quiet "$1" ;;
+    esac
+}
+
+install_missing() {
+    case "$FAMILY" in
+        darwin)
+            brew install "$@"
+            ;;
+        debian)
+            as_root apt-get update -qq
+            # Sans prompt : garde les fichiers de config déjà modifiés
+            # (ex. /etc/zsh/zshrc d'une image qui l'a personnalisé).
+            as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+                -o Dpkg::Options::=--force-confdef \
+                -o Dpkg::Options::=--force-confold \
+                "$@"
+            ;;
+        fedora)
+            as_root dnf install -y "$@"
+            ;;
+    esac
+}
+
+# Crée /usr/local/bin/<nom> -> /usr/bin/<binaire> si le paquet installe le
+# binaire sous un autre nom. /usr/local est propre à chaque conteneur : le
+# lien ne déborde pas sur l'hôte, contrairement à un wrapper dans ~/.local/bin.
+link_usual_name() {
+    local name="$1" target="/usr/bin/$2"
+
+    [ -x "$target" ] || return 0
+    [ -e "/usr/bin/$name" ] && return 0
+    { [ -e "/usr/local/bin/$name" ] || [ -L "/usr/local/bin/$name" ]; } && return 0
+
+    echo "Lien /usr/local/bin/$name -> $target"
+    as_root ln -s "$target" "/usr/local/bin/$name"
+}
+
+debian_post_install() {
+    # Debian renomme ces binaires pour éviter des conflits de noms.
+    link_usual_name bat batcat
+    link_usual_name fd fdfind
+
+    # La base de command-not-found est construite à partir des index Contents
+    # d'apt, qui ne sont téléchargés que par un update fait après
+    # l'installation du paquet.
+    case " $* " in
+        *" command-not-found "*) as_root apt-get update -qq ;;
+    esac
+}
+
+FAMILY="$(detect_family)"
+
+if [ -z "$FAMILY" ]; then
+    echo "install-packages : distribution non prise en charge, rien à faire."
+    exit 0
+fi
+
+if [ "$FAMILY" != darwin ] && ! in_container && [ -e /run/ostree-booted ]; then
+    echo "install-packages : hôte ostree (Silverblue…), ses paquets sont gérés par bluepill."
+    exit 0
+fi
+
+LIST="$PACKAGES_DIR/$FAMILY.txt"
+
+if [ ! -r "$LIST" ]; then
+    echo "install-packages : pas de liste $LIST, rien à faire."
+    exit 0
+fi
+
+# Un paquet par ligne ; tout ce qui suit un # est un commentaire.
+MISSING=()
+while read -r pkg <&3; do
+    [ -n "$pkg" ] || continue
+    is_installed "$pkg" || MISSING+=("$pkg")
+done 3< <(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$LIST")
+
+if [ "${#MISSING[@]}" -gt 0 ]; then
+    echo "install-packages : installation de ${MISSING[*]}"
+    install_missing "${MISSING[@]}"
+else
+    echo "install-packages : rien à installer ($FAMILY)."
+fi
+
+if [ "$FAMILY" = debian ]; then
+    debian_post_install "${MISSING[@]}"
+fi

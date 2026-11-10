@@ -1,7 +1,6 @@
 README.md
 
 {{ if eq .chezmoi.os "darwin" }}
-.local/bin/bat
 # Pas de SELinux sur macOS : ce lien vers le wrapper podman appellerait docker
 .local/bin/getenforce
 
@@ -10,10 +9,6 @@ README.md
 .zshrc.d/command-not-found.zsh
 {{ end }}
 
-
-{{ if not (and (hasKey .chezmoi.osRelease "id") (eq .chezmoi.osRelease.id "debian")) }}
-.local/bin/bat
-{{ end }}
 
 {{ if or .isContainer (not (and (hasKey .chezmoi.osRelease "id") (eq .chezmoi.osRelease.id "fedora"))) }}
 # Synchro du workspace vers le Mac : se lance depuis le Fedora hôte uniquement
