@@ -4,7 +4,7 @@
 # Noms exacts des paquets (vérifiés avec rpm -q, qui ignore les « provides »).
 # curl, less et glibc-all-langpacks : déjà installés par distrobox-init.
 # Pas de PackageKit-command-not-found : il passe par le bus D-Bus système, que
-# distrobox ne partage pas. Voir ~/.zshrc.d/command-not-found-linux.zsh.
+# distrobox ne partage pas, donc il ne marche pas en conteneur.
 zsh
 git
 gh
