@@ -1,0 +1,11 @@
+# Fedora en conteneur (distrobox, devcontainers).
+# Ignoré sur un hôte Silverblue : ses paquets sont gérés par bluepill.
+# Installés par ~/.local/bin/install-packages : un paquet par ligne.
+zsh
+git
+bat
+fd-find
+ripgrep
+python3-pygments  # coloration syntaxique dans bat
+rclone
+PackageKit-command-not-found

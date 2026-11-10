@@ -79,7 +79,9 @@ function dir_exists() {
 # Add wisely, as too many plugins slow down shell startup.
 OMZ_PLUGINS=()
 cmd_exists git && OMZ_PLUGINS+=(git)
-cmd_exists command-not-found && OMZ_PLUGINS+=(command-not-found)
+# Pas de commande command-not-found dans le PATH : Debian installe /usr/lib/command-not-found,
+# Fedora /usr/libexec/pk-command-not-found (PackageKit)
+[[ -x /usr/lib/command-not-found || -x /usr/libexec/pk-command-not-found ]] && OMZ_PLUGINS+=(command-not-found)
 # dir_exists ~/.nvm && OMZ_PLUGINS+=(nvm)
 cmd_exists tmux && OMZ_PLUGINS+=(tmux)
 cmd_exists fzf && OMZ_PLUGINS+=(fzf)

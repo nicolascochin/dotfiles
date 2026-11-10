@@ -1,0 +1,12 @@
+# macOS (Homebrew).
+# Installés par ~/.local/bin/install-packages : un paquet par ligne.
+zsh
+gh
+git
+bat
+fd
+ripgrep
+direnv
+jq
+pygments  # coloration syntaxique dans bat
+rclone

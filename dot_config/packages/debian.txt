@@ -1,0 +1,18 @@
+# Debian / Ubuntu (devcontainers, distrobox).
+# Installés par ~/.local/bin/install-packages : un paquet par ligne.
+zsh
+git
+curl
+gh
+build-essential
+vim
+bat               # binaire batcat, lien /usr/local/bin/bat créé par le script
+fd-find           # binaire fdfind, lien /usr/local/bin/fd créé par le script
+ripgrep
+command-not-found
+direnv
+jq
+python3-pygments  # coloration syntaxique dans bat
+locales-all       # locale UTF-8 (requise par starship)
+less              # requis par bat
+rclone
