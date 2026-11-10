@@ -1,0 +1,7 @@
+# Alpine Linux (distrobox).
+# Installés par ~/.local/bin/install-packages : un paquet par ligne.
+# Noms exacts des paquets (vérifiés avec apk info -e).
+zsh
+git
+curl
+build-base
