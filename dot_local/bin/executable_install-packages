@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installe les paquets de ~/.config/packages/<famille>.txt qui manquent
-# (familles : darwin, debian, fedora).
+# (familles : arch, darwin, debian, fedora).
 #
 # La distribution est détectée à l'exécution, pas au rendu chezmoi : le
 # $HOME est partagé entre l'hôte et ses distrobox, donc ce script et ses
@@ -38,6 +38,7 @@ detect_family() {
     # shellcheck disable=SC1091
     for id in $(. /etc/os-release && echo "${ID:-} ${ID_LIKE:-}"); do
         case "$id" in
+            arch)          echo arch;   return ;;
             debian|ubuntu) echo debian; return ;;
             fedora)        echo fedora; return ;;
         esac
@@ -48,6 +49,7 @@ is_installed() {
     # ${Status} est un champ de dpkg-query, pas une variable shell.
     # shellcheck disable=SC2016
     case "$FAMILY" in
+        arch)   pacman -Q "$1" >/dev/null 2>&1 ;;
         darwin) brew list "$1" >/dev/null 2>&1 ;;
         debian) [ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null)" = "install ok installed" ] ;;
         fedora) rpm -q --quiet "$1" ;;
@@ -56,6 +58,10 @@ is_installed() {
 
 install_missing() {
     case "$FAMILY" in
+        arch)
+            # -Syu plutôt que -S : Arch ne gère pas les mises à jour partielles.
+            as_root pacman -Syu --needed --noconfirm "$@"
+            ;;
         darwin)
             brew install "$@"
             ;;

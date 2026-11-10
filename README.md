@@ -5,7 +5,7 @@ sh -c "$(curl -fsLS get.chezmoi.io/lb)" -- init --apply https://github.com/nicol
 
 # Paquets
 
-Les listes sont dans `dot_config/packages/<famille>.txt` (`darwin`, `debian`, `fedora`), un paquet par ligne.
+Les listes sont dans `dot_config/packages/<famille>.txt` (`arch`, `darwin`, `debian`, `fedora`), un paquet par ligne.
 `~/.local/bin/install-packages` installe ceux qui manquent. Il détecte la distribution à l'exécution, ce qui
 permet de partager le même `$HOME` entre l'hôte et ses distrobox.
 
