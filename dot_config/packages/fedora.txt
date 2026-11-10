@@ -3,6 +3,8 @@
 # Installés par ~/.local/bin/install-packages : un paquet par ligne.
 # Noms exacts des paquets (vérifiés avec rpm -q, qui ignore les « provides »).
 # curl, less et glibc-all-langpacks : déjà installés par distrobox-init.
+# Pas de PackageKit-command-not-found : il passe par le bus D-Bus système, que
+# distrobox ne partage pas, donc il ne marche pas en conteneur.
 zsh
 git
 gh
@@ -14,4 +16,3 @@ fd-find
 ripgrep
 python3-pygments  # coloration syntaxique dans bat
 rclone
-PackageKit-command-not-found

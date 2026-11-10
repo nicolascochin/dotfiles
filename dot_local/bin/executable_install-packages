@@ -112,6 +112,23 @@ debian_post_install() {
     esac
 }
 
+any_exists() {
+    local f
+    for f in "$@"; do
+        [ -e "$f" ] && return 0
+    done
+    return 1
+}
+
+arch_post_install() {
+    # La base de pkgfile (command-not-found) est d'habitude mise à jour par un
+    # timer systemd, absent d'une distrobox : on la remplit si elle est vide.
+    if command -v pkgfile >/dev/null 2>&1 && ! any_exists /var/cache/pkgfile/*.files; then
+        echo "install-packages : téléchargement de la base de pkgfile"
+        as_root pkgfile --update
+    fi
+}
+
 FAMILY="$(detect_family)"
 
 if [ -z "$FAMILY" ]; then
@@ -145,6 +162,7 @@ else
     echo "install-packages : rien à installer ($FAMILY)."
 fi
 
-if [ "$FAMILY" = debian ]; then
-    debian_post_install "${MISSING[@]}"
-fi
+case "$FAMILY" in
+    arch)   arch_post_install ;;
+    debian) debian_post_install "${MISSING[@]}" ;;
+esac
