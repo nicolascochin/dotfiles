@@ -3,21 +3,21 @@
 # Wrapper qui redirige vers le podman-compose de l'hôte, quel que soit
 # le contexte d'exécution (Flatpak, Distrobox, ou natif).
 # Sur macOS, il n'y a pas de Podman : on redirige vers `docker compose`.
+# Chemin absolu obligatoire : ce wrapper porte le même nom que la vraie
+# commande, une recherche dans le PATH peut le relancer lui-même en boucle.
+
+REAL=/usr/bin/podman-compose
 
 if [ "$(uname -s)" = "Darwin" ]; then
-    # macOS : on passe par Docker Compose (plugin de la CLI docker)
     exec docker compose "$@"
 
 elif [ -f /.flatpak-info ]; then
-    # On est dans un sandbox Flatpak
-    exec flatpak-spawn --host podman-compose "$@"
+    exec flatpak-spawn --host "$REAL" "$@"
 
 elif [ -n "$CONTAINER_ID" ] || [ -f /run/.containerenv ]; then
-    # On est dans une Distrobox (ou un container OCI générique)
-    exec distrobox-host-exec podman-compose "$@"
+    exec distrobox-host-exec "$REAL" "$@"
 
 else
-    # Exécution native sur l'hôte
-    exec podman-compose "$@"
+    [ -x "$REAL" ] || { echo "podman-compose introuvable : $REAL" >&2; exit 127; }
+    exec "$REAL" "$@"
 fi
-
